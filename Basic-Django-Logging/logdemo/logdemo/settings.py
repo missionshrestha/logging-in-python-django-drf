@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'core',
+    'shop',
 ]
 
 MIDDLEWARE = [
@@ -122,45 +123,136 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-LOG_DIR = BASE_DIR / 'logs'
+
+# -------------------------------------------------------------------
+# Ensure a logs directory exists. All files will go under ./logs
+# -------------------------------------------------------------------
+LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
+
+# -------------------------------------------------------------------
+# Optional: enable colored console if "colorlog" is available.
+# We won’t crash if not installed—we fall back to plain.
+# -------------------------------------------------------------------
+try:
+    import colorlog  # noqa
+    COLORLOG_AVAILABLE = True
+except Exception:
+    COLORLOG_AVAILABLE = False
 
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers':False,
+    'disable_existing_loggers': False,
 
-    'formatters':{
+    # ---------------------- FORMATTERS (HOW) -----------------------
+    'formatters': {
+        # Verbose format for files & console fallback.
         'verbose': {
-            'format': '{levelname} {asctime} {module} {message}',
-            'style': '{',
+            # {name} shows full logger name (e.g., core.views)
+            # {module} is just the module (e.g., views)
+            'format': '{levelname} {asctime} {name} {module} {message}',
+            'style': '{',  # ✅ MUST be one of '%', '{', '$'
         },
         'simple': {
             'format': '{levelname} {message}',
             'style': '{',
         },
-    },
-    'handlers':{
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': str(LOG_DIR / 'django_logs.log'),
-            'formatter': 'verbose',
-        },
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-        'core': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG',
-            'propagate': False,
+        # Optional colorized console formatter (if colorlog present)
+        'colored': {
+            '()': 'colorlog.ColoredFormatter',
+            # %(log_color)s injects colors per level into the line
+            'format': '%(log_color)s%(levelname)-8s%(asctime)s %(name)s %(message)s',
+            'log_colors': {
+                'DEBUG':    'cyan',
+                'INFO':     'green',
+                'WARNING':  'yellow',
+                'ERROR':    'red',
+                'CRITICAL': 'bold_red',
+            },
+        } if COLORLOG_AVAILABLE else {
+            # If colorlog not available, we point "colored" to "verbose"
+            'format': '{levelname} {asctime} {name} {module} {message}',
+            'style': '{',
         },
     },
 
+    # ---------------------- HANDLERS (WHERE) ----------------------
+    'handlers': {
+        # Console: colored if possible; else verbose text.
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'colored' if COLORLOG_AVAILABLE else 'verbose',
+        },
+
+        # Project-wide file (everything important ends up here)
+        'all_file': {
+            'class': 'logging.FileHandler',
+            'filename': str(LOG_DIR / 'project_all.log'),
+            'formatter': 'verbose',
+        },
+
+        # Per-app files
+        'core_file': {
+            'class': 'logging.FileHandler',
+            'filename': str(LOG_DIR / 'core.log'),
+            'formatter': 'verbose',
+        },
+        'shop_file': {
+            'class': 'logging.FileHandler',
+            'filename': str(LOG_DIR / 'shop.log'),
+            'formatter': 'verbose',
+        },
+
+        # Request error file (HTTP 4xx/5xx)
+        'request_file': {
+            'class': 'logging.FileHandler',
+            'filename': str(LOG_DIR / 'requests.log'),
+            'formatter': 'verbose',
+        },
+
+        # Example of rotating file (swap any FileHandler with this)
+        # 'all_rotating': {
+        #     'class': 'logging.handlers.RotatingFileHandler',
+        #     'filename': str(LOG_DIR / 'project_all.log'),
+        #     'maxBytes': 5 * 1024 * 1024,  # 5 MB
+        #     'backupCount': 3,
+        #     'formatter': 'verbose',
+        # },
+    },
+
+    # ----------------------- LOGGERS (WHO) ------------------------
+    'loggers': {
+        # Framework-level logs (startup, middleware, etc.)
+        'django': {
+            'handlers': ['console', 'all_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+
+        # HTTP request/response errors (4xx/5xx)
+        'django.request': {
+            'handlers': ['console', 'request_file', 'all_file'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+
+        # Uncomment to see SQL queries (VERY noisy)
+        # 'django.db.backends': {
+        #     'handlers': ['console', 'all_file'],
+        #     'level': 'DEBUG',
+        #     'propagate': False,
+        # },
+
+        # App loggers — anything under "core.*" inherits 'core' config.
+        'core': {
+            'handlers': ['console', 'core_file', 'all_file'],
+            'level': 'DEBUG',
+            'propagate': False,  # prevents duplicate bubbling
+        },
+        'shop': {
+            'handlers': ['console', 'shop_file', 'all_file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
 }
